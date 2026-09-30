@@ -1,9 +1,8 @@
 [package]
-name = "lv2-host-audio-output-example"
+name = "lv2-host-native-ui-example"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
 [dependencies]
-cpal = "0.18.2"
 lv2-host = { git = "https://github.com/Joeboy/lv2-host-rs" }
