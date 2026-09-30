@@ -1,1 +1,7 @@
 target/
+/test-plugins/abGate/
+/test-plugins/LibreArp/
+/test-plugins/furelise-lv2/
+/test-plugins/build/
+
+*.sw[op]
