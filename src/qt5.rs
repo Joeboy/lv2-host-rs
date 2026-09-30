@@ -266,10 +266,9 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "opens abGate's native Qt5 window"]
     fn opens_abgate_with_suil_qt5_host() {
         let bundle = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../plugins/pc/abGate.lv2")
+            .join("test-plugins/build/abGate.lv2")
             .canonicalize()
             .unwrap();
         let lv2 = crate::Host::with_load_bundle(&format!("file://{}/", bundle.display()));

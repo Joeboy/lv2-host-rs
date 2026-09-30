@@ -5,7 +5,7 @@ ABGATE_REV := bcb61514760ead02511620979749fb55a8b447bd
 LIBREARP_REV := 05547ac465775cab983e00386e259793eb4fc50b
 FURELISE_REV := e4f87851b0504b846e19e4cf8a0c7fbfcfd933c8
 
-.PHONY: all fetch build install
+.PHONY: all fetch build install test
 
 all: install
 
@@ -32,3 +32,7 @@ install: build
 	cp -a "$(ROOT)/abGate/abGate.lv2" "$(BUILD_DIR)/"
 	cp -a "$(ROOT)/LibreArp/build/LibreArp_artefacts/Release/LV2/LibreArp.lv2" "$(BUILD_DIR)/"
 	cp -a "$(ROOT)/furelise-lv2/build/furelise.lv2" "$(BUILD_DIR)/"
+
+test: install
+	env -u WAYLAND_DISPLAY GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb LV2_PATH="$(BUILD_DIR)" \
+		xvfb-run -a cargo test --manifest-path "$(ROOT)/../Cargo.toml" -- --test-threads=1
