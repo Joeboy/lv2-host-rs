@@ -59,6 +59,7 @@ pub(super) fn open(
     }
     let helper = write_helper()?;
     let child = Command::new(&helper)
+        .env("QT_QPA_PLATFORM", "xcb")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())

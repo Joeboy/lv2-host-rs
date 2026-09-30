@@ -278,7 +278,8 @@ mod qt5;
 #[cfg(target_os = "linux")]
 mod platform {
     use super::*;
-    use gtk::{glib, prelude::*};
+    use gdk::prelude::DisplayExtManual;
+    use gtk::{gdk, glib, prelude::*};
     use libloading::Library;
     use std::{
         cell::RefCell,
@@ -659,10 +660,21 @@ mod platform {
     }
 
     fn run(commands: mpsc::Receiver<Command>) {
-        let setup = gtk::init()
-            .map_err(|error| format!("could not initialise GTK for plugin UIs: {error}"))
-            .and_then(|()| SuilApi::load())
-            .map(Rc::new);
+        let setup = (|| {
+            if gtk::is_initialized() {
+                return Err("GTK was already initialised on another thread".to_owned());
+            }
+            // Suil embeds X11 plugin UIs in a GtkPlug, which requires GDK's X11 backend.
+            gdk::set_allowed_backends("x11");
+            gtk::init()
+                .map_err(|error| format!("could not initialise X11 GTK for plugin UIs: {error}"))?;
+            let display = gdk::Display::default()
+                .ok_or_else(|| "GTK did not open a display for plugin UIs".to_owned())?;
+            if !display.backend().is_x11() {
+                return Err("native LV2 UIs require an X11 GTK display".to_owned());
+            }
+            SuilApi::load().map(Rc::new)
+        })();
         let Ok(api) = setup else {
             let error = setup.err().unwrap();
             while let Ok(command) = commands.recv() {

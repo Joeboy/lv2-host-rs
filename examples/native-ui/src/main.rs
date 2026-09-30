@@ -68,6 +68,8 @@ fn run() -> Result<(), String> {
         .map_err(|error| format!("could not read standard input: {error}"))?;
 
     window.close();
+    // Closing is queued on the GTK thread; let it destroy the native widget.
+    std::thread::sleep(std::time::Duration::from_millis(250));
     drop(ui_host);
     drop(instance);
     Ok(())

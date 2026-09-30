@@ -34,5 +34,4 @@ install: build
 	cp -a "$(ROOT)/furelise-lv2/build/furelise.lv2" "$(BUILD_DIR)/"
 
 test: install
-	env -u WAYLAND_DISPLAY GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb LV2_PATH="$(BUILD_DIR)" \
-		xvfb-run -a cargo test --manifest-path "$(ROOT)/../Cargo.toml" -- --test-threads=1
+	LV2_PATH="$(BUILD_DIR)" xvfb-run -a cargo test --manifest-path "$(ROOT)/../Cargo.toml" -- --test-threads=1
