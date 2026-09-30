@@ -1,7 +1,7 @@
 target/
-/test-plugins/abGate/
-/test-plugins/LibreArp/
-/test-plugins/furelise-lv2/
-/test-plugins/build/
+/example-plugins/abGate/
+/example-plugins/LibreArp/
+/example-plugins/furelise-lv2/
+/example-plugins/build/
 
 *.sw[op]

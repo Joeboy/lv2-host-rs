@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn opens_abgate_with_suil_qt5_host() {
         let bundle = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("test-plugins/build/abGate.lv2")
+            .join("example-plugins/build/abGate.lv2")
             .canonicalize()
             .unwrap();
         let lv2 = crate::Host::with_load_bundle(&format!("file://{}/", bundle.display()));

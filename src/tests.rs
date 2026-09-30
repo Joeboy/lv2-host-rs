@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn processing_context_owns_configuration_and_instances_outlive_host() {
     let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("test-plugins/build/abGate.lv2")
+        .join("example-plugins/build/abGate.lv2")
         .canonicalize()
         .unwrap();
     let host = Host::with_load_bundle(&format!("file://{}/", bundle.display()));
@@ -82,7 +82,7 @@ fn processing_context_owns_configuration_and_instances_outlive_host() {
 #[test]
 fn discovers_native_and_external_uis() {
     let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("test-plugins/build/LibreArp.lv2")
+        .join("example-plugins/build/LibreArp.lv2")
         .canonicalize()
         .unwrap();
     let lv2 = Host::with_load_bundle(&format!("file://{}/", bundle.display()));
@@ -107,7 +107,7 @@ fn discovers_native_and_external_uis() {
 #[test]
 fn opens_librearp_ui_in_isolated_host_runtime() {
     let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("test-plugins/build/LibreArp.lv2")
+        .join("example-plugins/build/LibreArp.lv2")
         .canonicalize()
         .unwrap();
     let instance = {
