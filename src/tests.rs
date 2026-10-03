@@ -105,6 +105,49 @@ fn discovers_native_and_external_uis() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn opens_gtk3_ui_and_receives_control_writes() {
+    let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("example-plugins/build/gtk3-gain.lv2")
+        .canonicalize()
+        .unwrap();
+    let host = Host::with_load_bundle(&format!("file://{}/", bundle.display()));
+    let context = host
+        .processing_context(ProcessingConfig::default())
+        .unwrap();
+    let instance = host
+        .plugin("urn:lv2-host:example:gtk3-gain")
+        .unwrap()
+        .instantiate(&context)
+        .unwrap();
+    let (writes, received) = std::sync::mpsc::channel();
+    let window = UiHost::new()
+        .open(
+            instance.ui_instance(),
+            UiOptions {
+                window_title: "GTK3 gain".to_owned(),
+                port_update: Arc::new(move |update| {
+                    writes.send(update).unwrap();
+                }),
+            },
+        )
+        .unwrap();
+    window.update_control("gain", 1.5).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        let update = received
+            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .unwrap();
+        assert_eq!(update.port, "gain");
+        if (update.value - 1.5).abs() < 0.01 {
+            break;
+        }
+    }
+    assert!(window.is_open());
+    window.close();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn opens_librearp_ui_in_isolated_host_runtime() {
     let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("example-plugins/build/LibreArp.lv2")
@@ -153,4 +196,42 @@ fn opens_librearp_ui_in_isolated_host_runtime() {
     second.present().unwrap();
     second.close();
     std::thread::sleep(std::time::Duration::from_millis(100));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn opens_librearp_external_ui() {
+    let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("example-plugins/build/LibreArp.lv2")
+        .canonicalize()
+        .unwrap();
+    let host = Host::with_load_bundle(&format!("file://{}/", bundle.display()));
+    let context = host
+        .processing_context(ProcessingConfig::default())
+        .unwrap();
+    let instance = host
+        .plugin("https://librearp.gitlab.io")
+        .unwrap()
+        .instantiate(&context)
+        .unwrap();
+    let mut ui_instance = instance.ui_instance();
+    ui_instance.uis.retain(|ui| {
+        ui.classes
+            .iter()
+            .any(|class| class == "http://kxstudio.sf.net/ns/lv2ext/external-ui#Widget")
+    });
+    assert_eq!(ui_instance.uis.len(), 1);
+    let window = UiHost::new()
+        .open(
+            ui_instance,
+            UiOptions {
+                window_title: "LibreArp external".to_owned(),
+                port_update: Arc::new(|_| {}),
+            },
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    assert!(window.is_open());
+    window.present().unwrap();
+    window.close();
 }

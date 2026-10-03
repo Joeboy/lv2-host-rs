@@ -1,0 +1,12 @@
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix ui: <http://lv2plug.in/ns/extensions/ui#> .
+
+<urn:lv2-host:example:gtk3-gain>
+    a lv2:Plugin ;
+    lv2:binary <gain.so> ;
+    ui:ui <urn:lv2-host:example:gtk3-gain-ui> ;
+    <http://www.w3.org/2000/01/rdf-schema#seeAlso> <gain.ttl> .
+
+<urn:lv2-host:example:gtk3-gain-ui>
+    a ui:Gtk3UI ;
+    ui:binary <gain-ui.so> .

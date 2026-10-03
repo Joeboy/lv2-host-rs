@@ -58,12 +58,13 @@ changed by your application or obtained from a control output. This updates the
 UI only; the application must also send edits to the processing instance.
 `present()` and `update_control()` report whether work was queued, not whether
 the toolkit has finished it. `is_open()` reflects closure observed by the UI
-runtime. Calls belong outside the audio callback. GTK and Qt5 both support these
+runtime. Calls belong outside the audio callback. GTK2, GTK3, X11, Qt5, and
+KXStudio external UIs support these
 operations; toolkit selection remains automatic.
 
 ## Build requirements
 
-On Linux, a full build with GTK3/X11 and Qt5 UI support requires:
+On Linux, a full build with GTK2, GTK3/X11, and Qt5 UI support requires:
 
 - a Rust toolchain with Cargo;
 - `pkg-config`;
@@ -71,6 +72,7 @@ On Linux, a full build with GTK3/X11 and Qt5 UI support requires:
 - Lilv and LV2 development headers;
 - Suil development headers and library;
 - GTK3 development headers and library;
+- GTK2 development headers and library;
 - Qt5 Widgets development headers and libraries.
 
 On Debian or Ubuntu these can be installed with:
@@ -83,16 +85,18 @@ sudo apt install \
   lv2-dev \
   libsuil-dev \
   libgtk-3-dev \
+  libgtk2.0-dev \
   qtbase5-dev
 ```
 
 The resulting application also needs the corresponding Lilv, Suil, GTK3, and Qt5
 shared libraries at runtime.
 
-Qt5 UI support is detected by the build script using `pkg-config`. If the Qt5
-Widgets or Suil development files are unavailable, the crate still builds but
-Qt5 plugin UIs are disabled. GTK3 development files are currently required for
-Linux builds.
+GTK2 and Qt5 UI support are detected by the build script using `pkg-config`.
+If their respective development files are unavailable, those UI types are
+disabled. GTK3 development files are currently required for Linux builds.
+GTK2 and Qt5 UIs run in separate helper processes to keep their toolkit
+runtimes isolated from the GTK3 host thread.
 
 ## Example projects
 
@@ -104,6 +108,22 @@ caller-managed unsafe lifetime contract are required.
 
 [`examples/audio-output`](./examples/audio-output/) runs the bundled Für Elise
 LV2 plugin and sends its audio output to the default CPAL output device.
+
+`example-plugins/Makefile` builds the UI integration fixtures:
+
+| LV2 UI type | Example |
+| --- | --- |
+| GTK2 (`GtkUI`) | AMS LV2 Moog LPF |
+| GTK3 (`Gtk3UI`) | Local GTK3 gain fixture |
+| Qt5 (`Qt5UI`) | abGate |
+| X11 (`X11UI`) | LibreArp |
+| KXStudio external UI | LibreArp |
+
+Run `make -C example-plugins test` to build these bundles and exercise their
+windows under Xvfb. LibreArp declares both X11 and external UIs; separate tests
+exercise both interfaces.
+Building the AMS example additionally requires GTKMM 2.4 and FFTW3 development
+packages (`libgtkmm-2.4-dev` and `libfftw3-dev` on Debian or Ubuntu).
 
 ## AI declaration
 

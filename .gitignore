@@ -2,6 +2,7 @@ target/
 /example-plugins/abGate/
 /example-plugins/LibreArp/
 /example-plugins/furelise-lv2/
+/example-plugins/ams-lv2/
 /example-plugins/build/
 
 *.sw[op]

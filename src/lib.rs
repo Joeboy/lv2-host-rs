@@ -272,6 +272,8 @@ struct UiOpenRequest {
     options: UiOptions,
 }
 
+#[cfg(all(target_os = "linux", lv2_host_gtk2))]
+mod gtk2;
 #[cfg(all(target_os = "linux", lv2_host_qt5))]
 mod qt5;
 
@@ -296,11 +298,15 @@ mod platform {
     };
 
     const GTK3_UI: &CStr = c"http://lv2plug.in/ns/extensions/ui#Gtk3UI";
+    #[cfg(lv2_host_gtk2)]
+    const GTK2_UI: &CStr = c"http://lv2plug.in/ns/extensions/ui#GtkUI";
     #[cfg(lv2_host_qt5)]
     const QT5_UI: &CStr = c"http://lv2plug.in/ns/extensions/ui#Qt5UI";
     const INSTANCE_ACCESS: &CStr = c"http://lv2plug.in/ns/ext/instance-access";
     const UI_PARENT: &CStr = c"http://lv2plug.in/ns/extensions/ui#parent";
     const UI_IDLE: &CStr = c"http://lv2plug.in/ns/extensions/ui#idleInterface";
+    const EXTERNAL_UI: &CStr = c"http://kxstudio.sf.net/ns/lv2ext/external-ui#Widget";
+    const EXTERNAL_HOST: &CStr = c"http://kxstudio.sf.net/ns/lv2ext/external-ui#Host";
 
     type PortWrite = unsafe extern "C" fn(*mut c_void, u32, u32, u32, *const c_void);
     type PortIndex = unsafe extern "C" fn(*mut c_void, *const c_char) -> u32;
@@ -317,6 +323,19 @@ mod platform {
     #[repr(C)]
     struct IdleInterface {
         idle: Option<unsafe extern "C" fn(*mut c_void) -> i32>,
+    }
+
+    #[repr(C)]
+    struct ExternalWidget {
+        run: Option<unsafe extern "C" fn(*mut ExternalWidget)>,
+        show: Option<unsafe extern "C" fn(*mut ExternalWidget)>,
+        hide: Option<unsafe extern "C" fn(*mut ExternalWidget)>,
+    }
+
+    #[repr(C)]
+    struct ExternalHost {
+        ui_closed: Option<unsafe extern "C" fn(*mut c_void)>,
+        plugin_human_id: *const c_char,
     }
 
     struct SuilApi {
@@ -381,6 +400,13 @@ mod platform {
         by_index: BTreeMap<u32, String>,
         by_symbol: BTreeMap<String, u32>,
         port_update: PortUpdateCallback,
+        alive: Arc<AtomicBool>,
+    }
+
+    unsafe extern "C" fn external_ui_closed(controller: *mut c_void) {
+        if let Some(controller) = unsafe { (controller as *const Controller).as_ref() } {
+            controller.alive.store(false, Ordering::Release);
+        }
     }
 
     unsafe extern "C" fn write_port(
@@ -466,10 +492,62 @@ mod platform {
         }
     }
 
+    struct ExternalWindow {
+        alive: Arc<AtomicBool>,
+        api: Rc<SuilApi>,
+        _ui_instance: UiInstance,
+        host: *mut c_void,
+        instance: *mut c_void,
+        widget: *mut ExternalWidget,
+        controller: *mut Controller,
+        _external_host: Box<ExternalHost>,
+        _title: CString,
+    }
+
+    impl ExternalWindow {
+        fn show(&self) {
+            if let Some(show) = unsafe { (*self.widget).show } {
+                unsafe { show(self.widget) };
+            }
+        }
+
+        fn idle(&self) {
+            if let Some(run) = unsafe { (*self.widget).run } {
+                unsafe { run(self.widget) };
+            }
+        }
+
+        fn update_control(&self, index: u32, value: f32) {
+            unsafe {
+                (self.api.instance_port_event)(
+                    self.instance,
+                    index,
+                    4,
+                    0,
+                    (&value as *const f32).cast(),
+                );
+            }
+        }
+    }
+
+    impl Drop for ExternalWindow {
+        fn drop(&mut self) {
+            self.alive.store(false, Ordering::Release);
+            unsafe {
+                (self.api.instance_free)(self.instance);
+                (self.api.host_free)(self.host);
+                drop(Box::from_raw(self.controller));
+            }
+        }
+    }
+
     enum HostedUi {
         Gtk(Window),
+        External(ExternalWindow),
         #[cfg(lv2_host_qt5)]
         Qt5(super::qt5::Window),
+        #[cfg(lv2_host_gtk2)]
+        Gtk2(super::gtk2::Window),
     }
 
     impl HostedUi {
@@ -479,16 +557,25 @@ mod platform {
                     window.window.present();
                     true
                 }
+                Self::External(window) => {
+                    window.show();
+                    true
+                }
                 #[cfg(lv2_host_qt5)]
                 Self::Qt5(window) => window.present().is_ok(),
+                #[cfg(lv2_host_gtk2)]
+                Self::Gtk2(window) => window.present().is_ok(),
             }
         }
 
         fn is_running(&mut self) -> bool {
             match self {
                 Self::Gtk(window) => window.alive.load(Ordering::Acquire),
+                Self::External(window) => window.alive.load(Ordering::Acquire),
                 #[cfg(lv2_host_qt5)]
                 Self::Qt5(window) => window.is_running(),
+                #[cfg(lv2_host_gtk2)]
+                Self::Gtk2(window) => window.is_running(),
             }
         }
 
@@ -498,13 +585,22 @@ mod platform {
                     window.update_control(index, value);
                     true
                 }
+                Self::External(window) => {
+                    window.update_control(index, value);
+                    true
+                }
                 #[cfg(lv2_host_qt5)]
                 Self::Qt5(window) => window.update_control(index, value).is_ok(),
+                #[cfg(lv2_host_gtk2)]
+                Self::Gtk2(window) => window.update_control(index, value).is_ok(),
             }
         }
 
         fn idle(&self) {
             if let Self::Gtk(window) = self {
+                window.idle();
+            }
+            if let Self::External(window) = self {
                 window.idle();
             }
         }
@@ -762,6 +858,17 @@ mod platform {
             return super::qt5::open(request, ui, ui_type)
                 .map(|window| (instance_id, HostedUi::Qt5(window)));
         }
+        #[cfg(lv2_host_gtk2)]
+        if let Some((_, ui, ui_type)) = select_ui(&api, GTK2_UI, &request) {
+            let instance_id = request.id;
+            return super::gtk2::open(request, ui, ui_type)
+                .map(|window| (instance_id, HostedUi::Gtk2(window)));
+        }
+        if let Some((_, ui, ui_type)) = select_ui(&api, EXTERNAL_UI, &request) {
+            let instance_id = request.id;
+            return open_external_window(api, request, ui, ui_type)
+                .map(|window| (instance_id, HostedUi::External(window)));
+        }
         Err("this plugin has no UI type supported by the available Suil hosts".to_owned())
     }
 
@@ -792,6 +899,7 @@ mod platform {
                 .collect(),
             by_index: request.instance.ports.clone(),
             port_update: request.options.port_update,
+            alive: request.alive.clone(),
         });
         let controller = Box::into_raw(controller);
         let host = unsafe { (api.host_new)(Some(write_port), Some(port_index), None, None) };
@@ -887,6 +995,100 @@ mod platform {
                 controller,
             },
         ))
+    }
+
+    fn open_external_window(
+        api: Rc<SuilApi>,
+        request: UiOpenRequest,
+        ui: UiDescriptor,
+        ui_type: String,
+    ) -> Result<ExternalWindow, String> {
+        let plugin_uri =
+            CString::new(request.instance.plugin_uri.as_str()).map_err(|_| "invalid plugin URI")?;
+        let ui_uri = CString::new(ui.uri.as_str()).map_err(|_| "invalid UI URI")?;
+        let bundle = CString::new(ui.bundle_path.as_str()).map_err(|_| "invalid UI path")?;
+        let binary = CString::new(ui.binary_path.as_str()).map_err(|_| "invalid UI path")?;
+        let ui_type = CString::new(ui_type).map_err(|_| "invalid UI type")?;
+        let title = CString::new(request.options.window_title.as_str())
+            .map_err(|_| "invalid window title")?;
+        let mut external_host = Box::new(ExternalHost {
+            ui_closed: Some(external_ui_closed),
+            plugin_human_id: title.as_ptr(),
+        });
+        let controller = Box::into_raw(Box::new(Controller {
+            by_symbol: request
+                .instance
+                .ports
+                .iter()
+                .map(|(index, symbol)| (symbol.clone(), *index))
+                .collect(),
+            by_index: request.instance.ports.clone(),
+            port_update: request.options.port_update,
+            alive: request.alive.clone(),
+        }));
+        let host = unsafe { (api.host_new)(Some(write_port), Some(port_index), None, None) };
+        if host.is_null() {
+            unsafe { drop(Box::from_raw(controller)) };
+            return Err("Suil could not create an external UI host".to_owned());
+        }
+        let external_feature = Lv2Feature {
+            uri: EXTERNAL_HOST.as_ptr(),
+            data: (&mut *external_host as *mut ExternalHost).cast(),
+        };
+        let instance_access = Lv2Feature {
+            uri: INSTANCE_ACCESS.as_ptr(),
+            data: request.instance.handle() as *mut c_void,
+        };
+        let features = [
+            &external_feature as *const Lv2Feature,
+            &instance_access,
+            ptr::null(),
+        ];
+        let instance = unsafe {
+            (api.instance_new)(
+                host,
+                controller.cast(),
+                EXTERNAL_UI.as_ptr(),
+                plugin_uri.as_ptr(),
+                ui_uri.as_ptr(),
+                ui_type.as_ptr(),
+                bundle.as_ptr(),
+                binary.as_ptr(),
+                features.as_ptr(),
+            )
+        };
+        if instance.is_null() {
+            unsafe {
+                (api.host_free)(host);
+                drop(Box::from_raw(controller));
+            }
+            return Err("Suil could not instantiate the selected external plugin UI".to_owned());
+        }
+        let widget = unsafe { (api.instance_get_widget)(instance) as *mut ExternalWidget };
+        if widget.is_null() {
+            unsafe {
+                (api.instance_free)(instance);
+                (api.host_free)(host);
+                drop(Box::from_raw(controller));
+            }
+            return Err("the external plugin UI did not provide a widget".to_owned());
+        }
+        let window = ExternalWindow {
+            alive: request.alive,
+            api,
+            _ui_instance: request.instance,
+            host,
+            instance,
+            widget,
+            controller,
+            _external_host: external_host,
+            _title: title,
+        };
+        for (index, value) in &window._ui_instance.controls {
+            window.update_control(*index, *value);
+        }
+        window.show();
+        Ok(window)
     }
 }
 
