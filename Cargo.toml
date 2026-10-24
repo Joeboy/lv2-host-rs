@@ -12,7 +12,7 @@ pkg-config = "0.3"
 
 [dependencies]
 libloading = "0.9"
-livi = "0.7.5"
+livi = "0.7.6"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2.0.21"
 
